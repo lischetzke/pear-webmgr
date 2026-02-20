@@ -57,6 +57,11 @@
     return d.innerHTML;
   }
 
+  function cachedImg(url) {
+    if (!url) return '';
+    return '/img-cache?url=' + encodeURIComponent(url);
+  }
+
   // --- YT Music Innertube Response Parsers ---
 
   /**
@@ -319,7 +324,7 @@
 
       if (song.imageSrc) {
         if (song.videoId !== currentVideoId) {
-          els.art.src = song.imageSrc;
+          els.art.src = cachedImg(song.imageSrc);
         }
         els.noArt.classList.add('hidden');
       } else {
@@ -486,7 +491,7 @@
     els.queueList.innerHTML = visibleItems.map((item, vi) => {
       const originalIndex = startIdx + vi;
       const isActive = originalIndex === currentQueueIndex;
-      const thumb = item.thumbnail || '';
+      const thumb = cachedImg(item.thumbnail);
       return `
         <div class="queue-item${isActive ? ' active' : ''}" data-index="${originalIndex}">
           <img class="queue-item-thumb" src="${escapeHtml(thumb)}" alt="">
@@ -691,7 +696,7 @@
     }
 
     els.searchResults.innerHTML = results.map(item => {
-      const thumb = item.thumbnail || '';
+      const thumb = cachedImg(item.thumbnail);
       return `
         <div class="search-item">
           <img class="search-item-thumb" src="${escapeHtml(thumb)}" alt="">

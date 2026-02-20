@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>YTM Remote</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0f0f0f">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
 </head>
 <body>
   <div class="layout">
@@ -37,7 +40,7 @@
           <svg id="icon-pause" viewBox="0 0 24 24" width="44" height="44" class="hidden"><path d="M6 19h4V5H6zm8-14v14h4V5z"/></svg>
         </button>
         <button id="btn-next" class="ctrl-btn" title="Next">
-          <svg viewBox="0 0 24 24" width="32" height="32"><path d="M6 18l8.5-6L6 6v12zm2 0V6l6.5 6L8 18zM16 6v12h2V6z"/><path d="M6 18l8.5-6L6 6v12zm10-12v12h2V6z"/></svg>
+          <svg viewBox="0 0 24 24" width="32" height="32"><path d="M6 18l8.5-6L6 6v12zm10-12v12h2V6z"/></svg>
         </button>
       </div>
 
@@ -87,5 +90,6 @@
   </div>
 
   <script src="app.js"></script>
+  <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');</script>
 </body>
 </html>
