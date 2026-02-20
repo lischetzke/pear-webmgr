@@ -1,0 +1,606 @@
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --bg: #0f0f0f;
+  --surface: #1a1a1a;
+  --surface-hover: #252525;
+  --text: #e1e1e1;
+  --text-dim: #888;
+  --accent: #ff4e45;
+  --accent-glow: rgba(255, 78, 69, .25);
+  --radius: 16px;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100dvh;
+  padding: 24px;
+}
+
+/* --- Two-Column Layout --- */
+
+.layout {
+  display: flex;
+  gap: 24px;
+  max-width: 900px;
+  margin: 0 auto;
+  min-height: calc(100dvh - 48px);
+  align-items: center;
+}
+
+.panel {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, .4);
+}
+
+.panel-player {
+  width: 340px;
+  flex-shrink: 0;
+  padding: 32px 28px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+.panel-sidebar {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* --- Album Art --- */
+
+.album-art-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #222;
+}
+
+.album-art-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: opacity .4s ease;
+}
+
+.album-art-wrap img[src=""] {
+  opacity: 0;
+}
+
+.no-art {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  color: var(--text-dim);
+  pointer-events: none;
+  transition: opacity .4s ease;
+}
+
+.no-art.hidden {
+  opacity: 0;
+}
+
+/* --- Song Info --- */
+
+.song-info {
+  text-align: center;
+  width: 100%;
+  overflow: hidden;
+}
+
+.title {
+  font-size: 1.15rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.artist {
+  font-size: .9rem;
+  color: var(--text-dim);
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --- Progress --- */
+
+.progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  font-size: .75rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-bar {
+  flex: 1;
+  height: 4px;
+  background: #333;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 1s linear;
+}
+
+/* --- Controls --- */
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+}
+
+.ctrl-btn {
+  background: none;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  padding: 10px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .2s, transform .1s;
+}
+
+.ctrl-btn svg {
+  fill: currentColor;
+}
+
+.ctrl-btn:hover {
+  background: var(--surface-hover);
+}
+
+.ctrl-btn:active {
+  transform: scale(.9);
+}
+
+.ctrl-btn--play {
+  background: var(--accent);
+  color: #fff;
+  width: 64px;
+  height: 64px;
+  box-shadow: 0 4px 20px var(--accent-glow);
+}
+
+.ctrl-btn--play:hover {
+  background: #e5433a;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* --- Volume --- */
+
+.volume {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.volume-icon {
+  fill: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.volume-value {
+  font-size: .8rem;
+  color: var(--text-dim);
+  min-width: 28px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1;
+  height: 6px;
+  background: #333;
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
+  box-shadow: 0 0 6px var(--accent-glow);
+  transition: transform .15s;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
+  box-shadow: 0 0 6px var(--accent-glow);
+}
+
+/* --- Tab Bar --- */
+
+.tab-bar {
+  display: flex;
+  border-bottom: 1px solid #2a2a2a;
+  flex-shrink: 0;
+}
+
+.tab-btn {
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: .9rem;
+  font-weight: 500;
+  padding: 14px 0;
+  cursor: pointer;
+  position: relative;
+  transition: color .2s;
+}
+
+.tab-btn:hover {
+  color: var(--text);
+}
+
+.tab-btn.active {
+  color: var(--text);
+}
+
+.tab-btn.active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 20%;
+  right: 20%;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+}
+
+/* --- Tab Content --- */
+
+.tab-content {
+  display: none;
+  flex-direction: column;
+  padding: 16px 20px 20px;
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.tab-content.active {
+  display: flex;
+}
+
+/* --- Queue Sections --- */
+
+.queue-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.queue-section--list {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.queue-heading {
+  font-size: .8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-dim);
+}
+
+/* --- Queue List --- */
+
+.queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  flex: 1;
+  scrollbar-width: thin;
+  scrollbar-color: #333 transparent;
+}
+
+.queue-empty {
+  text-align: center;
+  color: var(--text-dim);
+  font-size: .85rem;
+  padding: 20px 0;
+}
+
+.queue-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background .15s;
+  flex-shrink: 0;
+}
+
+.queue-item:hover {
+  background: var(--surface-hover);
+}
+
+.queue-item.active {
+  background: rgba(255, 78, 69, .1);
+}
+
+.queue-item-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  object-fit: cover;
+  background: #222;
+  flex-shrink: 0;
+}
+
+.queue-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.queue-item-title {
+  font-size: .85rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.queue-item-artist {
+  font-size: .75rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.queue-item-remove {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: color .15s, background .15s;
+}
+
+.queue-item-remove:hover {
+  color: var(--accent);
+  background: rgba(255, 78, 69, .15);
+}
+
+/* --- Input Rows --- */
+
+.queue-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.queue-input-row input[type="text"] {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: var(--text);
+  font-size: .85rem;
+  outline: none;
+  transition: border-color .2s;
+  min-width: 0;
+}
+
+.queue-input-row input[type="text"]:focus {
+  border-color: var(--accent);
+}
+
+.queue-input-row input[type="text"]::placeholder {
+  color: #555;
+}
+
+.queue-input-row input[type="text"].placeholder-success::placeholder {
+  color: #4caf50;
+}
+
+.queue-input-row input[type="text"].placeholder-error::placeholder {
+  color: var(--accent);
+}
+
+.queue-action-btn {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: .85rem;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .15s;
+  flex-shrink: 0;
+}
+
+.queue-action-btn:hover {
+  background: #e5433a;
+}
+
+.queue-action-btn:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+/* --- Status Messages --- */
+
+.queue-status {
+  font-size: .8rem;
+  padding: 4px 0;
+}
+
+.queue-status.success {
+  color: #4caf50;
+}
+
+.queue-status.error {
+  color: var(--accent);
+}
+
+/* --- Search Results --- */
+
+.search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: #333 transparent;
+}
+
+.search-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-radius: 8px;
+  transition: background .15s;
+  flex-shrink: 0;
+}
+
+.search-item:hover {
+  background: var(--surface-hover);
+}
+
+.search-item-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  object-fit: cover;
+  background: #222;
+  flex-shrink: 0;
+}
+
+.search-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.search-item-title {
+  font-size: .85rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-item-artist {
+  font-size: .75rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-item-add {
+  background: none;
+  border: 1px solid #333;
+  color: var(--text);
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: .75rem;
+  flex-shrink: 0;
+  transition: border-color .15s, background .15s;
+}
+
+.search-item-add:hover {
+  border-color: var(--accent);
+  background: rgba(255, 78, 69, .1);
+}
+
+.search-item-add:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+.search-loading {
+  text-align: center;
+  color: var(--text-dim);
+  font-size: .85rem;
+  padding: 16px 0;
+}
+
+/* --- Responsive: stack on narrow viewports --- */
+
+@media (max-width: 700px) {
+  .layout {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .panel-player {
+    width: 100%;
+    max-width: 380px;
+  }
+
+  .panel-sidebar {
+    width: 100%;
+    max-width: 380px;
+    height: auto !important;
+    max-height: 70vh;
+  }
+}

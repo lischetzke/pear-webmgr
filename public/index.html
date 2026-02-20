@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YTM Remote</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="layout">
+
+    <main class="panel panel-player">
+      <div class="album-art-wrap">
+        <img id="album-art" src="" alt="Album Art">
+        <div id="no-art" class="no-art">No song playing</div>
+      </div>
+
+      <div class="song-info">
+        <div id="title" class="title">--</div>
+        <div id="artist" class="artist">--</div>
+      </div>
+
+      <div class="progress">
+        <span id="elapsed">0:00</span>
+        <div class="progress-bar">
+          <div id="progress-fill" class="progress-fill"></div>
+        </div>
+        <span id="duration">0:00</span>
+      </div>
+
+      <div class="controls">
+        <button id="btn-prev" class="ctrl-btn" title="Previous">
+          <svg viewBox="0 0 24 24" width="32" height="32"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+        </button>
+        <button id="btn-play" class="ctrl-btn ctrl-btn--play" title="Play / Pause">
+          <svg id="icon-play" viewBox="0 0 24 24" width="44" height="44"><path d="M8 5v14l11-7z"/></svg>
+          <svg id="icon-pause" viewBox="0 0 24 24" width="44" height="44" class="hidden"><path d="M6 19h4V5H6zm8-14v14h4V5z"/></svg>
+        </button>
+        <button id="btn-next" class="ctrl-btn" title="Next">
+          <svg viewBox="0 0 24 24" width="32" height="32"><path d="M6 18l8.5-6L6 6v12zm2 0V6l6.5 6L8 18zM16 6v12h2V6z"/><path d="M6 18l8.5-6L6 6v12zm10-12v12h2V6z"/></svg>
+        </button>
+      </div>
+
+      <div class="volume">
+        <svg class="volume-icon" viewBox="0 0 24 24" width="22" height="22">
+          <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/>
+        </svg>
+        <input id="volume-slider" type="range" min="0" max="100" value="50">
+        <span id="volume-value" class="volume-value">50</span>
+      </div>
+    </main>
+
+    <aside class="panel panel-sidebar">
+      <div class="tab-bar">
+        <button class="tab-btn active" data-tab="queue">Queue</button>
+        <button class="tab-btn" data-tab="search">Search</button>
+      </div>
+
+      <div id="tab-queue" class="tab-content active">
+        <div class="queue-section">
+          <h2 class="queue-heading">Add by URL</h2>
+          <div class="queue-input-row">
+            <input id="url-input" type="text" placeholder="YouTube or YT Music link...">
+            <button id="btn-add-url" class="queue-action-btn">Add</button>
+          </div>
+        </div>
+
+        <div class="queue-section queue-section--list">
+          <h2 class="queue-heading">Up Next</h2>
+          <div id="queue-list" class="queue-list">
+            <div class="queue-empty">Queue is empty</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="tab-search" class="tab-content">
+        <div class="queue-section">
+          <div class="queue-input-row">
+            <input id="search-input" type="text" placeholder="Search songs...">
+            <button id="btn-search" class="queue-action-btn">Search</button>
+          </div>
+        </div>
+        <div id="search-results" class="search-results"></div>
+      </div>
+    </aside>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
