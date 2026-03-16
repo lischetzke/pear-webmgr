@@ -20,7 +20,8 @@
     tabQueue: $('#tab-queue'),
     tabSearch: $('#tab-search'),
     urlInput: $('#url-input'),
-    btnAddUrl: $('#btn-add-url'),
+    btnAddUrlNext: $('#btn-add-url-next'),
+    btnAddUrlEnd: $('#btn-add-url-end'),
     searchInput: $('#search-input'),
     btnSearch: $('#btn-search'),
     searchResults: $('#search-results'),
@@ -35,6 +36,9 @@
   let currentQueueIndex = -1;
   let activeTab = 'queue';
   let lastQueueFingerprint = '';
+  let draggingQueueFromIndex = null;
+  let dragJustHappenedAt = 0;
+  const VOLUME_CONTROL_ENABLED = false;
 
   // --- Helpers ---
 
@@ -349,6 +353,7 @@
   }
 
   async function pollVolume() {
+    if (!VOLUME_CONTROL_ENABLED) return;
     if (isUserDraggingVolume) return;
     try {
       const res = await fetch('/api/v1/volume');
@@ -394,27 +399,33 @@
 
   // --- Volume ---
 
-  els.volumeSlider.addEventListener('mousedown', () => { isUserDraggingVolume = true; });
-  els.volumeSlider.addEventListener('touchstart', () => { isUserDraggingVolume = true; }, { passive: true });
+  if (VOLUME_CONTROL_ENABLED) {
+    els.volumeSlider.addEventListener('mousedown', () => { isUserDraggingVolume = true; });
+    els.volumeSlider.addEventListener('touchstart', () => { isUserDraggingVolume = true; }, { passive: true });
 
-  els.volumeSlider.addEventListener('input', () => {
-    const target = Number(els.volumeSlider.value);
-    els.volumeValue.textContent = target;
-    clearTimeout(volumeDebounce);
-    volumeDebounce = setTimeout(() => {
-      fetch('/api/v1/volume', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ volume: target }),
-      }).catch(() => {});
-    }, 150);
-  });
+    els.volumeSlider.addEventListener('input', () => {
+      const target = Number(els.volumeSlider.value);
+      els.volumeValue.textContent = target;
+      clearTimeout(volumeDebounce);
+      volumeDebounce = setTimeout(() => {
+        fetch('/api/v1/volume', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ volume: target }),
+        }).catch(() => {});
+      }, 150);
+    });
 
-  function endVolumeDrag() {
-    isUserDraggingVolume = false;
+    function endVolumeDrag() {
+      isUserDraggingVolume = false;
+    }
+    els.volumeSlider.addEventListener('mouseup', endVolumeDrag);
+    els.volumeSlider.addEventListener('touchend', endVolumeDrag);
+  } else {
+    // Soft-disable: keep current value visible, but block manual changes.
+    els.volumeSlider.disabled = true;
+    els.volumeSlider.title = 'Volume control temporarily disabled';
   }
-  els.volumeSlider.addEventListener('mouseup', endVolumeDrag);
-  els.volumeSlider.addEventListener('touchend', endVolumeDrag);
 
   // --- Tab Switching ---
 
@@ -493,7 +504,12 @@
       const isActive = originalIndex === currentQueueIndex;
       const thumb = cachedImg(item.thumbnail);
       return `
-        <div class="queue-item${isActive ? ' active' : ''}" data-index="${originalIndex}">
+        <div class="queue-item${isActive ? ' active' : ''}" data-index="${originalIndex}" draggable="true">
+          <span class="queue-item-drag-handle" title="Drag to reorder" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="14" height="14">
+              <path fill="currentColor" d="M8 4h2v2H8V4zm0 7h2v2H8v-2zm0 7h2v2H8v-2zm6-14h2v2h-2V4zm0 7h2v2h-2v-2zm0 7h2v2h-2v-2z"/>
+            </svg>
+          </span>
           <img class="queue-item-thumb" src="${escapeHtml(thumb)}" alt="">
           <div class="queue-item-info">
             <div class="queue-item-title">${escapeHtml(item.title || 'Unknown')}</div>
@@ -543,6 +559,8 @@
   // --- Queue Remove / Jump ---
 
   els.queueList.addEventListener('click', (e) => {
+    if (Date.now() - dragJustHappenedAt < 250) return;
+
     const removeBtn = e.target.closest('.queue-item-remove');
     if (removeBtn) {
       e.stopPropagation();
@@ -554,6 +572,63 @@
     if (queueItem) {
       jumpToQueueIndex(Number(queueItem.dataset.index));
     }
+  });
+
+  function clearQueueDragUi() {
+    document.querySelectorAll('.queue-item.dragging, .queue-item.drop-target').forEach(function (el) {
+      el.classList.remove('dragging', 'drop-target');
+    });
+  }
+
+  els.queueList.addEventListener('dragstart', (e) => {
+    const queueItem = e.target.closest('.queue-item');
+    if (!queueItem) return;
+    draggingQueueFromIndex = Number(queueItem.dataset.index);
+    queueItem.classList.add('dragging');
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', String(draggingQueueFromIndex));
+    }
+  });
+
+  els.queueList.addEventListener('dragover', (e) => {
+    if (draggingQueueFromIndex === null) return;
+    const queueItem = e.target.closest('.queue-item');
+    if (!queueItem) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+
+    document.querySelectorAll('.queue-item.drop-target').forEach(function (el) {
+      el.classList.remove('drop-target');
+    });
+    const targetIndex = Number(queueItem.dataset.index);
+    if (targetIndex !== draggingQueueFromIndex) {
+      queueItem.classList.add('drop-target');
+    }
+  });
+
+  els.queueList.addEventListener('drop', async (e) => {
+    if (draggingQueueFromIndex === null) return;
+    const queueItem = e.target.closest('.queue-item');
+    clearQueueDragUi();
+    if (!queueItem) {
+      draggingQueueFromIndex = null;
+      return;
+    }
+
+    e.preventDefault();
+    const toIndex = Number(queueItem.dataset.index);
+    const fromIndex = draggingQueueFromIndex;
+    draggingQueueFromIndex = null;
+
+    if (!Number.isFinite(fromIndex) || !Number.isFinite(toIndex) || fromIndex === toIndex) return;
+    await moveQueueItem(fromIndex, toIndex);
+    dragJustHappenedAt = Date.now();
+  });
+
+  els.queueList.addEventListener('dragend', () => {
+    draggingQueueFromIndex = null;
+    clearQueueDragUi();
   });
 
   function invalidateQueueCache() {
@@ -582,10 +657,48 @@
     } catch { /* ignore */ }
   }
 
+  async function moveQueueItem(fromIndex, toIndex) {
+    try {
+      await fetch('/api/v1/queue/' + fromIndex, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ toIndex }),
+      });
+      invalidateQueueCache();
+      await new Promise(function (r) { setTimeout(r, 500); });
+      await fetchQueue();
+    } catch { /* ignore */ }
+  }
+
   // --- Add to Queue (as next song) ---
 
-  function addToQueuePayload(videoId) {
+  function addToQueuePayload(videoId, mode, insertPosition) {
+    if (mode === 'end') {
+      if (typeof insertPosition === 'number') return { videoId, insertPosition };
+      return { videoId };
+    }
     return { videoId, insertPosition: 'INSERT_AFTER_CURRENT_VIDEO' };
+  }
+
+  async function getQueueEndInsertPosition() {
+    try {
+      const res = await fetch('/api/v1/queue');
+      if (res.status === 204 || !res.ok) return null;
+      const data = await res.json();
+      return parseTrackList(data).length;
+    } catch {
+      return null;
+    }
+  }
+
+  async function addTrackToQueue(videoId, mode) {
+    const insertPosition = mode === 'end' ? await getQueueEndInsertPosition() : null;
+    const res = await fetch('/api/v1/queue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(addToQueuePayload(videoId, mode, insertPosition)),
+    });
+    return res;
   }
 
   function parseVideoId(url) {
@@ -615,12 +728,13 @@
     }, 3000);
   }
 
-  els.btnAddUrl.addEventListener('click', addByUrl);
+  els.btnAddUrlNext.addEventListener('click', () => addByUrl('next'));
+  els.btnAddUrlEnd.addEventListener('click', () => addByUrl('end'));
   els.urlInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') addByUrl();
+    if (e.key === 'Enter') addByUrl('next');
   });
 
-  async function addByUrl() {
+  async function addByUrl(mode) {
     const raw = els.urlInput.value.trim();
     if (!raw) return;
 
@@ -630,15 +744,12 @@
       return;
     }
 
-    els.btnAddUrl.disabled = true;
+    els.btnAddUrlNext.disabled = true;
+    els.btnAddUrlEnd.disabled = true;
     try {
-      const res = await fetch('/api/v1/queue', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(addToQueuePayload(videoId)),
-      });
+      const res = await addTrackToQueue(videoId, mode);
       if (res.ok || res.status === 204) {
-        showUrlPlaceholder('Added as next song');
+        showUrlPlaceholder(mode === 'end' ? 'Added to queue end' : 'Added as next song');
         invalidateQueueCache();
         await new Promise(function (r) { setTimeout(r, 500); });
         await fetchQueue();
@@ -648,7 +759,8 @@
     } catch {
       showUrlPlaceholder('Connection error', true);
     } finally {
-      els.btnAddUrl.disabled = false;
+      els.btnAddUrlNext.disabled = false;
+      els.btnAddUrlEnd.disabled = false;
     }
   }
 
@@ -704,26 +816,26 @@
             <div class="search-item-title">${escapeHtml(item.title || 'Unknown')}</div>
             <div class="search-item-artist">${escapeHtml(item.artist || '')}</div>
           </div>
-          <button class="search-item-add" data-video-id="${escapeHtml(item.videoId)}" title="Add as next song">+ Add</button>
+          <div class="search-item-actions">
+            <button class="search-item-add search-item-add-next" data-video-id="${escapeHtml(item.videoId)}" title="Add as next song">Add next</button>
+            <button class="search-item-add search-item-add-end" data-video-id="${escapeHtml(item.videoId)}" title="Add to end of queue">Add end</button>
+          </div>
         </div>`;
     }).join('');
   }
 
   els.searchResults.addEventListener('click', async (e) => {
-    const btn = e.target.closest('.search-item-add');
+    const btn = e.target.closest('.search-item-add-next, .search-item-add-end');
     if (!btn) return;
 
     const videoId = btn.dataset.videoId;
     if (!videoId) return;
+    const isAddEnd = btn.classList.contains('search-item-add-end');
 
     btn.disabled = true;
     btn.textContent = '...';
     try {
-      const res = await fetch('/api/v1/queue', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(addToQueuePayload(videoId)),
-      });
+      const res = await addTrackToQueue(videoId, isAddEnd ? 'end' : 'next');
       btn.textContent = (res.ok || res.status === 204) ? 'Added' : 'Error';
       invalidateQueueCache();
       await new Promise(function (r) { setTimeout(r, 500); });
@@ -732,7 +844,7 @@
       btn.textContent = 'Error';
     }
     setTimeout(() => {
-      btn.textContent = '+ Add';
+      btn.textContent = isAddEnd ? 'Add end' : 'Add next';
       btn.disabled = false;
     }, 2000);
   });
