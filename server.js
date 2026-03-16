@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const express = require('express');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 const os = require('os');
@@ -7,9 +9,13 @@ const crypto = require('crypto');
 const https = require('https');
 const http = require('http');
 
-const PORT = process.env.PORT || 3001;
+const PORT = Number(process.env.PORT || 3001);
+const PORT_SSL = Number(process.env.PORT_SSL || PORT + 1);
 const YTM_HOST = process.env.YTM_HOST || 'localhost';
 const YTM_PORT = process.env.YTM_PORT || 26538;
+const USE_SSL = String(process.env.USE_SSL || 'false').toLowerCase() === 'true';
+const SSL_KEY_PATH = process.env.SSL_KEY_PATH;
+const SSL_CERT_PATH = process.env.SSL_CERT_PATH;
 const YTM_TARGET = `http://${YTM_HOST}:${YTM_PORT}`;
 
 const CACHE_DIR = path.join(__dirname, '.img-cache');
@@ -79,10 +85,34 @@ function getLanIP() {
   return '127.0.0.1';
 }
 
-app.listen(PORT, '0.0.0.0', () => {
+let server;
+let listenPort;
+let protocol;
+
+if (USE_SSL) {
+  if (!SSL_KEY_PATH || !SSL_CERT_PATH) {
+    console.error('USE_SSL=true requires SSL_KEY_PATH and SSL_CERT_PATH');
+    process.exit(1);
+  }
+
+  const keyPath = path.resolve(SSL_KEY_PATH);
+  const certPath = path.resolve(SSL_CERT_PATH);
+  server = https.createServer({
+    key: fs.readFileSync(keyPath),
+    cert: fs.readFileSync(certPath),
+  }, app);
+  listenPort = PORT_SSL;
+  protocol = 'https';
+} else {
+  server = http.createServer(app);
+  listenPort = PORT;
+  protocol = 'http';
+}
+
+server.listen(listenPort, '0.0.0.0', () => {
   const ip = getLanIP();
   console.log(`YTM Web Remote running at:`);
-  console.log(`  Local:   http://localhost:${PORT}`);
-  console.log(`  Network: http://${ip}:${PORT}`);
+  console.log(`  Local:   ${protocol}://localhost:${listenPort}`);
+  console.log(`  Network: ${protocol}://${ip}:${listenPort}`);
   console.log(`  Proxying API to: ${YTM_TARGET}`);
 });

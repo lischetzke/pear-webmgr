@@ -19,11 +19,15 @@ Open the URL printed in the console from any device on the same network.
 
 ## Configuration
 
-| Env Variable | Default     | Description                                |
-|-------------|-------------|--------------------------------------------|
-| `PORT`      | `3000`      | Port the web remote listens on             |
-| `YTM_HOST`  | `localhost` | Hostname/IP where pear-desktop is running  |
-| `YTM_PORT`  | `26538`     | pear-desktop API server port               |
+| Env Variable    | Default       | Description                                                  |
+|----------------|---------------|--------------------------------------------------------------|
+| `PORT`         | `3001`        | HTTP port used when `USE_SSL=false`                         |
+| `PORT_SSL`     | `PORT + 1`    | HTTPS port used when `USE_SSL=true`                         |
+| `YTM_HOST`     | `localhost`   | Hostname/IP where pear-desktop is running                   |
+| `YTM_PORT`     | `26538`       | pear-desktop API server port                                |
+| `USE_SSL`      | `false`       | Enables HTTPS when set to `true`                            |
+| `SSL_KEY_PATH` | _(required)_  | Path to TLS private key file (required when `USE_SSL=true`) |
+| `SSL_CERT_PATH`| _(required)_  | Path to TLS certificate file (required when `USE_SSL=true`) |
 
 Example running against a remote machine:
 
