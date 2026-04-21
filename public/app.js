@@ -9,6 +9,7 @@
     elapsed: $('#elapsed'),
     duration: $('#duration'),
     progressFill: $('#progress-fill'),
+    progressBar: $('#progress-bar'),
     btnPrev: $('#btn-prev'),
     btnPlay: $('#btn-play'),
     btnNext: $('#btn-next'),
@@ -25,20 +26,28 @@
     searchInput: $('#search-input'),
     btnSearch: $('#btn-search'),
     searchResults: $('#search-results'),
+    autoplayToggle: $('#autoplay-toggle'),
   };
 
   let currentVideoId = null;
   let currentSongTitle = '';
   let currentSongArtist = '';
+  let currentSongDuration = 0;
+  let currentElapsedSeconds = 0;
+  let lastElapsedSampleAt = 0;
+  let isSongPlaying = false;
   let volumeDebounce = null;
   let isUserDraggingVolume = false;
   let queuePollTimer = null;
   let currentQueueIndex = -1;
+  let queueItemCount = 0;
   let activeTab = 'queue';
   let lastQueueFingerprint = '';
   let draggingQueueFromIndex = null;
   let dragJustHappenedAt = 0;
-  const VOLUME_CONTROL_ENABLED = false;
+  let autoplayEnabled = false;
+  let autoplayRunning = false;
+  const VOLUME_CONTROL_ENABLED = true;
 
   // --- Helpers ---
 
@@ -310,7 +319,7 @@
       if (res.status === 204) {
         els.title.textContent = '--';
         els.artist.textContent = '--';
-        els.art.src = '';
+        els.art.removeAttribute('src');
         els.noArt.classList.remove('hidden');
         els.progressFill.style.width = '0%';
         els.elapsed.textContent = '0:00';
@@ -318,6 +327,9 @@
         currentVideoId = null;
         currentSongTitle = '';
         currentSongArtist = '';
+        currentSongDuration = 0;
+        currentElapsedSeconds = 0;
+        isSongPlaying = false;
         setPlayIcon(true);
         return;
       }
@@ -332,24 +344,63 @@
         }
         els.noArt.classList.add('hidden');
       } else {
-        els.art.src = '';
+        els.art.removeAttribute('src');
         els.noArt.classList.remove('hidden');
+      }
+
+      if (song.videoId !== currentVideoId) {
+        // New song: reset elapsed tracking to whatever the server reported.
+        currentElapsedSeconds = Number(song.elapsedSeconds) || 0;
       }
 
       currentVideoId = song.videoId;
       currentSongTitle = song.title || '';
       currentSongArtist = song.artist || '';
+      currentSongDuration = Number(song.songDuration) || 0;
+      isSongPlaying = song.isPaused === false;
 
-      const duration = song.songDuration || 0;
-      const elapsed = song.elapsedSeconds || 0;
-      els.elapsed.textContent = formatTime(elapsed);
-      els.duration.textContent = formatTime(duration);
-      els.progressFill.style.width = duration > 0
-        ? (elapsed / duration * 100) + '%'
-        : '0%';
+      const serverElapsed = Number(song.elapsedSeconds) || 0;
+      // Only accept the server sample when it's a real mid-song value.
+      // pear-desktop often reports either 0 or the full duration, which would
+      // snap the progress back and forth; ignore those and keep our local
+      // counter ticking.
+      var isSuspiciousSample =
+        serverElapsed === 0 ||
+        (currentSongDuration > 0 && serverElapsed >= currentSongDuration - 0.5);
 
-      setPlayIcon(song.isPaused !== false);
+      if (!isSuspiciousSample) {
+        currentElapsedSeconds = serverElapsed;
+      } else if (serverElapsed === 0 && !isSongPlaying && currentElapsedSeconds === 0) {
+        currentElapsedSeconds = 0;
+      }
+      lastElapsedSampleAt = Date.now();
+
+      renderProgress();
+      setPlayIcon(!isSongPlaying);
+
+      // Auto-play hook: if the queue is running out, try to keep it going.
+      maybeTriggerAutoplay();
     } catch { /* silently retry next cycle */ }
+  }
+
+  function renderProgress() {
+    const duration = currentSongDuration;
+    const elapsed = Math.max(0, Math.min(currentElapsedSeconds, duration || currentElapsedSeconds));
+    els.elapsed.textContent = formatTime(elapsed);
+    els.duration.textContent = formatTime(duration);
+    els.progressFill.style.width = duration > 0
+      ? (elapsed / duration * 100) + '%'
+      : '0%';
+  }
+
+  function tickLocalElapsed() {
+    if (!isSongPlaying || !currentSongDuration) return;
+    const now = Date.now();
+    const delta = (now - lastElapsedSampleAt) / 1000;
+    if (delta <= 0) return;
+    lastElapsedSampleAt = now;
+    currentElapsedSeconds = Math.min(currentSongDuration, currentElapsedSeconds + delta);
+    renderProgress();
   }
 
   async function pollVolume() {
@@ -400,27 +451,41 @@
   // --- Volume ---
 
   if (VOLUME_CONTROL_ENABLED) {
-    els.volumeSlider.addEventListener('mousedown', () => { isUserDraggingVolume = true; });
-    els.volumeSlider.addEventListener('touchstart', () => { isUserDraggingVolume = true; }, { passive: true });
+    function sendVolume(target) {
+      return fetch('/api/v1/volume', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ volume: target }),
+      }).catch(() => {});
+    }
+
+    els.volumeSlider.addEventListener('pointerdown', () => { isUserDraggingVolume = true; });
 
     els.volumeSlider.addEventListener('input', () => {
       const target = Number(els.volumeSlider.value);
       els.volumeValue.textContent = target;
+      // Mark "user dragging" so the background poll doesn't overwrite the UI
+      // mid-interaction, even for keyboard / touch interactions that don't
+      // emit pointerdown.
+      isUserDraggingVolume = true;
       clearTimeout(volumeDebounce);
-      volumeDebounce = setTimeout(() => {
-        fetch('/api/v1/volume', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ volume: target }),
-        }).catch(() => {});
-      }, 150);
+      volumeDebounce = setTimeout(() => sendVolume(target), 120);
+    });
+
+    els.volumeSlider.addEventListener('change', () => {
+      const target = Number(els.volumeSlider.value);
+      clearTimeout(volumeDebounce);
+      sendVolume(target);
     });
 
     function endVolumeDrag() {
-      isUserDraggingVolume = false;
+      // Release after a brief delay so any in-flight debounce commits before
+      // the next pollVolume() is allowed to snap the slider.
+      setTimeout(() => { isUserDraggingVolume = false; }, 250);
     }
-    els.volumeSlider.addEventListener('mouseup', endVolumeDrag);
-    els.volumeSlider.addEventListener('touchend', endVolumeDrag);
+    els.volumeSlider.addEventListener('pointerup', endVolumeDrag);
+    els.volumeSlider.addEventListener('pointercancel', endVolumeDrag);
+    els.volumeSlider.addEventListener('blur', endVolumeDrag);
   } else {
     // Soft-disable: keep current value visible, but block manual changes.
     els.volumeSlider.disabled = true;
@@ -446,9 +511,14 @@
   // --- Queue Display ---
 
   async function fetchQueue() {
+    // Don't clobber the DOM while the user has a drag in flight — it would
+    // cancel the drag and lose the drop target highlight.
+    if (draggingQueueFromIndex !== null) return;
     try {
       const res = await fetch('/api/v1/queue');
       if (res.status === 204) {
+        queueItemCount = 0;
+        lastQueueFingerprint = '__empty__';
         els.queueList.innerHTML = '<div class="queue-empty">Queue is empty</div>';
         return;
       }
@@ -475,6 +545,7 @@
   function renderQueue(data) {
     const allItems = parseTrackList(data);
     if (allItems.length === 0) {
+      queueItemCount = 0;
       if (lastQueueFingerprint !== '__empty__') {
         lastQueueFingerprint = '__empty__';
         els.queueList.innerHTML = '<div class="queue-empty">Queue is empty</div>';
@@ -483,6 +554,7 @@
     }
 
     currentQueueIndex = resolveCurrentIndex(data, allItems);
+    queueItemCount = allItems.length;
 
     const startIdx = Math.max(0, currentQueueIndex);
     const visibleItems = allItems.slice(startIdx);
@@ -499,6 +571,10 @@
     if (fp === lastQueueFingerprint) return;
     lastQueueFingerprint = fp;
 
+    // draggable="false" on interactive children prevents them from starting a
+    // drag on the parent (otherwise a mousedown-click on the remove button
+    // would kick off a drag and potentially fire a trailing click that wiped
+    // the song out).
     els.queueList.innerHTML = visibleItems.map((item, vi) => {
       const originalIndex = startIdx + vi;
       const isActive = originalIndex === currentQueueIndex;
@@ -510,12 +586,12 @@
               <path fill="currentColor" d="M8 4h2v2H8V4zm0 7h2v2H8v-2zm0 7h2v2H8v-2zm6-14h2v2h-2V4zm0 7h2v2h-2v-2zm0 7h2v2h-2v-2z"/>
             </svg>
           </span>
-          <img class="queue-item-thumb" src="${escapeHtml(thumb)}" alt="">
+          <img class="queue-item-thumb" src="${escapeHtml(thumb)}" alt="" draggable="false">
           <div class="queue-item-info">
             <div class="queue-item-title">${escapeHtml(item.title || 'Unknown')}</div>
             <div class="queue-item-artist">${escapeHtml(item.artist || '')}</div>
           </div>
-          <button class="queue-item-remove" data-index="${originalIndex}" title="Remove">
+          <button class="queue-item-remove" data-index="${originalIndex}" data-video-id="${escapeHtml(item.videoId || '')}" title="Remove" draggable="false">
             <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
           </button>
         </div>`;
@@ -559,7 +635,16 @@
   // --- Queue Remove / Jump ---
 
   els.queueList.addEventListener('click', (e) => {
-    if (Date.now() - dragJustHappenedAt < 250) return;
+    // Any drag — successful, cancelled, or a "click that happened to start a
+    // drag" — updates dragJustHappenedAt on dragend. Suppress clicks that fall
+    // inside that window, because browsers may still dispatch a click on the
+    // original mousedown target after an aborted drag, which used to fire the
+    // remove button and delete the dragged song.
+    if (Date.now() - dragJustHappenedAt < 400) {
+      e.stopPropagation();
+      e.preventDefault();
+      return;
+    }
 
     const removeBtn = e.target.closest('.queue-item-remove');
     if (removeBtn) {
@@ -582,12 +667,20 @@
 
   els.queueList.addEventListener('dragstart', (e) => {
     const queueItem = e.target.closest('.queue-item');
-    if (!queueItem) return;
+    if (!queueItem) {
+      e.preventDefault();
+      return;
+    }
+    // Don't initiate a drag when the gesture starts on the remove button.
+    if (e.target.closest('.queue-item-remove')) {
+      e.preventDefault();
+      return;
+    }
     draggingQueueFromIndex = Number(queueItem.dataset.index);
     queueItem.classList.add('dragging');
     if (e.dataTransfer) {
       e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/plain', String(draggingQueueFromIndex));
+      try { e.dataTransfer.setData('text/plain', String(draggingQueueFromIndex)); } catch {}
     }
   });
 
@@ -608,6 +701,12 @@
   });
 
   els.queueList.addEventListener('drop', async (e) => {
+    // Always suppress the default drop behaviour and mark drag-just-happened,
+    // even when fromIndex === toIndex, so the click that some browsers emit
+    // after a drop can never reach the remove button handler.
+    e.preventDefault();
+    dragJustHappenedAt = Date.now();
+
     if (draggingQueueFromIndex === null) return;
     const queueItem = e.target.closest('.queue-item');
     clearQueueDragUi();
@@ -616,17 +715,22 @@
       return;
     }
 
-    e.preventDefault();
     const toIndex = Number(queueItem.dataset.index);
     const fromIndex = draggingQueueFromIndex;
     draggingQueueFromIndex = null;
 
     if (!Number.isFinite(fromIndex) || !Number.isFinite(toIndex) || fromIndex === toIndex) return;
     await moveQueueItem(fromIndex, toIndex);
+    // Refresh in case the click-suppression window was the only thing keeping
+    // stale UI on screen.
     dragJustHappenedAt = Date.now();
   });
 
   els.queueList.addEventListener('dragend', () => {
+    // dragend fires after successful drops AND cancelled drags. Recording the
+    // timestamp here ensures the click suppression window kicks in for every
+    // drag gesture, including ones that never fired a drop.
+    dragJustHappenedAt = Date.now();
     draggingQueueFromIndex = null;
     clearQueueDragUi();
   });
@@ -658,45 +762,48 @@
   }
 
   async function moveQueueItem(fromIndex, toIndex) {
+    if (!Number.isInteger(fromIndex) || !Number.isInteger(toIndex)) return;
+    if (fromIndex < 0 || toIndex < 0) return;
+    if (fromIndex === toIndex) return;
+
     try {
-      await fetch('/api/v1/queue/' + fromIndex, {
+      const res = await fetch('/api/v1/queue/' + fromIndex, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ toIndex }),
+        body: JSON.stringify({ toIndex: toIndex }),
       });
+      if (!res.ok && res.status !== 204) {
+        console.warn('[pear-webmgr] Move failed:', res.status, await res.text().catch(() => ''));
+      }
       invalidateQueueCache();
-      await new Promise(function (r) { setTimeout(r, 500); });
+      // Give pear-desktop a moment to settle its queue state before we
+      // re-render, otherwise we can observe an intermediate state that
+      // briefly shows the moved song missing.
+      await new Promise(function (r) { setTimeout(r, 600); });
       await fetchQueue();
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.error('[pear-webmgr] Move error:', err);
+    }
   }
 
-  // --- Add to Queue (as next song) ---
+  // --- Add to Queue ---
 
-  function addToQueuePayload(videoId, mode, insertPosition) {
-    if (mode === 'end') {
-      if (typeof insertPosition === 'number') return { videoId, insertPosition };
-      return { videoId };
-    }
-    return { videoId, insertPosition: 'INSERT_AFTER_CURRENT_VIDEO' };
-  }
-
-  async function getQueueEndInsertPosition() {
-    try {
-      const res = await fetch('/api/v1/queue');
-      if (res.status === 204 || !res.ok) return null;
-      const data = await res.json();
-      return parseTrackList(data).length;
-    } catch {
-      return null;
-    }
+  // pear-desktop's POST /api/v1/queue only accepts the enum insertPosition
+  // values INSERT_AT_END / INSERT_AFTER_CURRENT_VIDEO (see AddSongToQueueSchema
+  // in pear-desktop). A numeric index would fail validation, which previously
+  // broke the "Add end" button silently.
+  function addToQueuePayload(videoId, mode) {
+    return {
+      videoId,
+      insertPosition: mode === 'end' ? 'INSERT_AT_END' : 'INSERT_AFTER_CURRENT_VIDEO',
+    };
   }
 
   async function addTrackToQueue(videoId, mode) {
-    const insertPosition = mode === 'end' ? await getQueueEndInsertPosition() : null;
     const res = await fetch('/api/v1/queue', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(addToQueuePayload(videoId, mode, insertPosition)),
+      body: JSON.stringify(addToQueuePayload(videoId, mode)),
     });
     return res;
   }
@@ -849,6 +956,83 @@
     }, 2000);
   });
 
+  // --- Progress Bar Seek ---
+
+  els.progressBar.addEventListener('click', async (e) => {
+    if (!currentSongDuration || !currentVideoId) return;
+    const rect = els.progressBar.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const seconds = Math.round(ratio * currentSongDuration);
+    try {
+      await fetch('/api/v1/seek-to', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ seconds }),
+      });
+      // Update local state immediately so the bar doesn't snap back.
+      currentElapsedSeconds = seconds;
+      lastElapsedSampleAt = Date.now();
+      renderProgress();
+    } catch { /* ignore */ }
+  });
+
+  // --- Autoplay when queue is empty ---
+
+  const AUTOPLAY_STORAGE_KEY = 'pear-webmgr.autoplay';
+  try {
+    autoplayEnabled = localStorage.getItem(AUTOPLAY_STORAGE_KEY) === '1';
+  } catch { autoplayEnabled = false; }
+  if (els.autoplayToggle) {
+    els.autoplayToggle.checked = autoplayEnabled;
+    els.autoplayToggle.addEventListener('change', () => {
+      autoplayEnabled = els.autoplayToggle.checked;
+      try { localStorage.setItem(AUTOPLAY_STORAGE_KEY, autoplayEnabled ? '1' : '0'); } catch {}
+      if (autoplayEnabled) maybeTriggerAutoplay();
+    });
+  }
+
+  async function maybeTriggerAutoplay() {
+    if (!autoplayEnabled || autoplayRunning) return;
+    // Only consider autoplay when a song is actually playing or loaded.
+    if (!currentVideoId) return;
+
+    // "Empty" here means: the currently playing song is the only thing left
+    // (or there is literally nothing queued after it).
+    const upcomingCount = queueItemCount - Math.max(0, currentQueueIndex) - 1;
+    if (upcomingCount > 0) return;
+
+    autoplayRunning = true;
+    try {
+      const query = (currentSongArtist || currentSongTitle || '').trim();
+      if (!query) return;
+
+      const res = await fetch('/api/v1/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query }),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const results = parseTrackList(data);
+
+      // Pick the first result that isn't the currently playing song to avoid
+      // accidentally looping a single track.
+      const pick = results.find(function (r) {
+        return r.videoId && r.videoId !== currentVideoId;
+      });
+      if (!pick) return;
+
+      await addTrackToQueue(pick.videoId, 'end');
+      invalidateQueueCache();
+      await new Promise(function (r) { setTimeout(r, 400); });
+      await fetchQueue();
+    } catch (err) {
+      console.warn('[pear-webmgr] Autoplay failed:', err);
+    } finally {
+      autoplayRunning = false;
+    }
+  }
+
   // --- Sync sidebar height to player height ---
 
   var panelPlayer = document.querySelector('.panel-player');
@@ -872,5 +1056,6 @@
   fetchQueue();
   setInterval(pollSong, 2000);
   setInterval(pollVolume, 5000);
+  setInterval(tickLocalElapsed, 500);
   queuePollTimer = setInterval(fetchQueue, 3000);
 })();
