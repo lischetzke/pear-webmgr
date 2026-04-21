@@ -37,6 +37,7 @@
   let lastElapsedSampleAt = 0;
   let isSongPlaying = false;
   let volumeDebounce = null;
+  let volumeUnlockTimer = null;
   let isUserDraggingVolume = false;
   let queuePollTimer = null;
   let currentQueueIndex = -1;
@@ -410,6 +411,10 @@
       const res = await fetch('/api/v1/volume');
       if (!res.ok) return;
       const data = await res.json();
+      // pear-desktop falls back to {state:0, isMuted:false} when its volume
+      // getter has no data yet. Ignore that sentinel so the slider doesn't
+      // snap to 0; only apply 0 when the player is actually muted.
+      if (data.state === 0 && !data.isMuted) return;
       const vol = Math.round(data.state);
       els.volumeSlider.value = vol;
       els.volumeValue.textContent = vol;
@@ -476,12 +481,17 @@
       const target = Number(els.volumeSlider.value);
       clearTimeout(volumeDebounce);
       sendVolume(target);
+      // Hold the drag-lock long enough for the server to process the POST
+      // before the next poll is allowed to overwrite the slider value.
+      clearTimeout(volumeUnlockTimer);
+      volumeUnlockTimer = setTimeout(() => { isUserDraggingVolume = false; }, 1500);
     });
 
     function endVolumeDrag() {
       // Release after a brief delay so any in-flight debounce commits before
       // the next pollVolume() is allowed to snap the slider.
-      setTimeout(() => { isUserDraggingVolume = false; }, 250);
+      clearTimeout(volumeUnlockTimer);
+      volumeUnlockTimer = setTimeout(() => { isUserDraggingVolume = false; }, 1500);
     }
     els.volumeSlider.addEventListener('pointerup', endVolumeDrag);
     els.volumeSlider.addEventListener('pointercancel', endVolumeDrag);
