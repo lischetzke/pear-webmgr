@@ -48,6 +48,9 @@
   let dragJustHappenedAt = 0;
   let autoplayEnabled = false;
   let autoplayRunning = false;
+  // Rolling history of videoIds that have been played or autoplay-queued this
+  // session.  Capped at 50 to avoid excluding everything after many hours.
+  const autoplayHistory = new Set();
   const VOLUME_CONTROL_ENABLED = true;
 
   // --- Helpers ---
@@ -352,6 +355,13 @@
       if (song.videoId !== currentVideoId) {
         // New song: reset elapsed tracking to whatever the server reported.
         currentElapsedSeconds = Number(song.elapsedSeconds) || 0;
+        // Record the outgoing song so autoplay won't re-add it.
+        if (currentVideoId) {
+          autoplayHistory.add(currentVideoId);
+          if (autoplayHistory.size > 50) {
+            autoplayHistory.delete(autoplayHistory.values().next().value);
+          }
+        }
       }
 
       currentVideoId = song.videoId;
@@ -988,31 +998,74 @@
 
   // --- Autoplay when queue is empty ---
 
-  const AUTOPLAY_STORAGE_KEY = 'pear-webmgr.autoplay';
-  try {
-    autoplayEnabled = localStorage.getItem(AUTOPLAY_STORAGE_KEY) === '1';
-  } catch { autoplayEnabled = false; }
+  function applyAutoplayState(enabled) {
+    autoplayEnabled = enabled;
+    if (els.autoplayToggle) els.autoplayToggle.checked = enabled;
+    if (enabled) maybeTriggerAutoplay();
+  }
+
+  async function pollAutoplayState() {
+    try {
+      const res = await fetch('/api/webmgr/autoplay');
+      if (!res.ok) return;
+      const data = await res.json();
+      if (typeof data.enabled === 'boolean' && data.enabled !== autoplayEnabled) {
+        applyAutoplayState(data.enabled);
+      }
+    } catch { /* ignore */ }
+  }
+
+  // Seed initial state from server; fall back to localStorage if server
+  // is unreachable (e.g. during development without the proxy).
+  (async function initAutoplay() {
+    try {
+      const res = await fetch('/api/webmgr/autoplay');
+      if (res.ok) {
+        const data = await res.json();
+        applyAutoplayState(!!data.enabled);
+        return;
+      }
+    } catch { /* fall through */ }
+    try {
+      applyAutoplayState(localStorage.getItem('pear-webmgr.autoplay') === '1');
+    } catch { /* ignore */ }
+  })();
+
   if (els.autoplayToggle) {
-    els.autoplayToggle.checked = autoplayEnabled;
-    els.autoplayToggle.addEventListener('change', () => {
-      autoplayEnabled = els.autoplayToggle.checked;
-      try { localStorage.setItem(AUTOPLAY_STORAGE_KEY, autoplayEnabled ? '1' : '0'); } catch {}
-      if (autoplayEnabled) maybeTriggerAutoplay();
+    els.autoplayToggle.addEventListener('change', async () => {
+      const enabled = els.autoplayToggle.checked;
+      autoplayEnabled = enabled;
+      // Persist on the server so all clients see the change.
+      try {
+        await fetch('/api/webmgr/autoplay', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled }),
+        });
+      } catch { /* ignore */ }
+      // localStorage as offline fallback
+      try { localStorage.setItem('pear-webmgr.autoplay', enabled ? '1' : '0'); } catch {}
+      if (enabled) maybeTriggerAutoplay();
     });
   }
 
   async function maybeTriggerAutoplay() {
     if (!autoplayEnabled || autoplayRunning) return;
-    // Only consider autoplay when a song is actually playing or loaded.
     if (!currentVideoId) return;
 
-    // "Empty" here means: the currently playing song is the only thing left
-    // (or there is literally nothing queued after it).
     const upcomingCount = queueItemCount - Math.max(0, currentQueueIndex) - 1;
     if (upcomingCount > 0) return;
 
     autoplayRunning = true;
     try {
+      // Claim the trigger lock on the server to prevent another client from
+      // adding a song at the same time.
+      const lockRes = await fetch('/api/webmgr/autoplay/trigger', { method: 'POST',
+        headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      if (!lockRes.ok) return;
+      const lock = await lockRes.json();
+      if (!lock.ok) return;
+
       const query = (currentSongArtist || currentSongTitle || '').trim();
       if (!query) return;
 
@@ -1025,13 +1078,14 @@
       const data = await res.json();
       const results = parseTrackList(data);
 
-      // Pick the first result that isn't the currently playing song to avoid
-      // accidentally looping a single track.
+      // Skip songs already in the autoplay history so we never loop back to a
+      // previously played or queued track within this session.
       const pick = results.find(function (r) {
-        return r.videoId && r.videoId !== currentVideoId;
+        return r.videoId && !autoplayHistory.has(r.videoId) && r.videoId !== currentVideoId;
       });
       if (!pick) return;
 
+      autoplayHistory.add(pick.videoId);
       await addTrackToQueue(pick.videoId, 'end');
       invalidateQueueCache();
       await new Promise(function (r) { setTimeout(r, 400); });
@@ -1066,6 +1120,7 @@
   fetchQueue();
   setInterval(pollSong, 2000);
   setInterval(pollVolume, 5000);
+  setInterval(pollAutoplayState, 5000);
   setInterval(tickLocalElapsed, 500);
   queuePollTimer = setInterval(fetchQueue, 3000);
 })();
