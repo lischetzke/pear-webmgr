@@ -120,8 +120,9 @@
     const artist = extractArtistFromRenderer(renderer);
     const thumbnail = extractRendererThumbnail(renderer);
     const selected = !!renderer.selected;
+    const musicVideoType = extractMusicVideoType(renderer);
 
-    return { title, artist, thumbnail, videoId, selected };
+    return { title, artist, thumbnail, videoId, selected, musicVideoType };
   }
 
   function extractWatchVideoId(renderer) {
@@ -129,6 +130,23 @@
       return renderer.overlay.musicItemThumbnailOverlayRenderer.content
         .musicPlayButtonRenderer.playNavigationEndpoint.watchEndpoint.videoId;
     } catch { return ''; }
+  }
+
+  // YT Music tags every playable item with a musicVideoType — ATV/OMV are
+  // real songs, PODCAST_EPISODE is a podcast, etc. Autoplay uses this to
+  // skip podcast episodes that show up in search results for a podcast-style
+  // artist (issue #5).
+  function extractMusicVideoType(renderer) {
+    try {
+      return renderer.overlay.musicItemThumbnailOverlayRenderer.content
+        .musicPlayButtonRenderer.playNavigationEndpoint.watchEndpoint
+        .watchEndpointMusicSupportedConfigs.watchEndpointMusicConfig.musicVideoType || '';
+    } catch {}
+    try {
+      return renderer.navigationEndpoint.watchEndpoint
+        .watchEndpointMusicSupportedConfigs.watchEndpointMusicConfig.musicVideoType || '';
+    } catch {}
+    return '';
   }
 
   function extractFlexColumnText(renderer, colIdx) {
@@ -268,6 +286,7 @@
       thumbnail: thumb,
       videoId: item.videoId || item.id || '',
       selected: !!item.selected,
+      musicVideoType: item.musicVideoType || '',
     };
   }
 
@@ -1049,6 +1068,28 @@
     });
   }
 
+  function splitArtistNames(s) {
+    return s.split(/,\s*|\s*&\s*|\s+ft\.?\s+|\s+feat\.?\s+/i)
+      .map(function (x) { return x.trim(); })
+      .filter(Boolean);
+  }
+
+  function artistsRelated(resultArtist, currentArtist) {
+    if (!currentArtist) return true;
+    if (!resultArtist) return false;
+    const a = resultArtist.toLowerCase();
+    const b = currentArtist.toLowerCase();
+    if (a === b || a.includes(b) || b.includes(a)) return true;
+    const aTokens = splitArtistNames(a);
+    const bTokens = splitArtistNames(b);
+    for (var i = 0; i < aTokens.length; i++) {
+      for (var j = 0; j < bTokens.length; j++) {
+        if (aTokens[i] && aTokens[i] === bTokens[j]) return true;
+      }
+    }
+    return false;
+  }
+
   async function maybeTriggerAutoplay() {
     if (!autoplayEnabled || autoplayRunning) return;
     if (!currentVideoId) return;
@@ -1066,7 +1107,13 @@
       const lock = await lockRes.json();
       if (!lock.ok) return;
 
-      const query = (currentSongArtist || currentSongTitle || '').trim();
+      // Combine artist + title.  Searching by artist alone surfaces too much
+      // unrelated content (other artists in YT Music's recommendation block,
+      // podcast episodes that share the artist's name); searching by title
+      // alone matches anything sharing a common word.
+      const titlePart = (currentSongTitle || '').trim();
+      const artistPart = (currentSongArtist || '').trim();
+      const query = [artistPart, titlePart].filter(Boolean).join(' ').trim();
       if (!query) return;
 
       const res = await fetch('/api/v1/search', {
@@ -1078,10 +1125,26 @@
       const data = await res.json();
       const results = parseTrackList(data);
 
-      // Skip songs already in the autoplay history so we never loop back to a
-      // previously played or queued track within this session.
+      const currentTitleNorm = (currentSongTitle || '').toLowerCase().trim();
+      const currentArtistNorm = (currentSongArtist || '').trim();
+
+      // Pick the first result that is:
+      //  - playable and not the current track / not previously queued
+      //  - not the same title (skips alternate uploads of the same song)
+      //  - not a podcast episode (issue #5: searching by a podcast's name
+      //    pulls in every other episode of the show)
+      //  - by a related artist (issue #5: prevents random unrelated tracks
+      //    that happen to rank for the search query from sneaking in)
+      // If nothing matches we add nothing — an empty queue is better than
+      // an unrelated autoplay pick.
       const pick = results.find(function (r) {
-        return r.videoId && !autoplayHistory.has(r.videoId) && r.videoId !== currentVideoId;
+        if (!r.videoId) return false;
+        if (r.videoId === currentVideoId) return false;
+        if (autoplayHistory.has(r.videoId)) return false;
+        if ((r.title || '').toLowerCase().trim() === currentTitleNorm) return false;
+        if (r.musicVideoType === 'MUSIC_VIDEO_TYPE_PODCAST_EPISODE') return false;
+        if (!artistsRelated(r.artist, currentArtistNorm)) return false;
+        return true;
       });
       if (!pick) return;
 
