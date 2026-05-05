@@ -67,6 +67,34 @@ app.get('/img-cache', (req, res) => {
   }).on('error', () => res.status(502).end());
 });
 
+// --- Shared autoplay state (synced across all web clients) ---
+
+let autoplayEnabled = false;
+let autoplayLastTriggeredAt = 0;
+const AUTOPLAY_LOCK_MS = 12000; // prevent two clients from double-adding
+
+app.get('/api/webmgr/autoplay', (req, res) => {
+  res.json({ enabled: autoplayEnabled });
+});
+
+app.post('/api/webmgr/autoplay', express.json(), (req, res) => {
+  const { enabled } = req.body;
+  if (typeof enabled !== 'boolean') return res.status(400).end();
+  autoplayEnabled = enabled;
+  res.status(204).end();
+});
+
+// Clients call this before adding an autoplay song to claim the right to do so.
+// Returns {ok:true} when the caller may proceed; {ok:false} when another client
+// already triggered within the lock window or autoplay is disabled.
+app.post('/api/webmgr/autoplay/trigger', express.json(), (req, res) => {
+  const now = Date.now();
+  if (!autoplayEnabled) return res.json({ ok: false });
+  if (now - autoplayLastTriggeredAt < AUTOPLAY_LOCK_MS) return res.json({ ok: false });
+  autoplayLastTriggeredAt = now;
+  res.json({ ok: true });
+});
+
 app.use(createProxyMiddleware({
   target: YTM_TARGET,
   changeOrigin: true,

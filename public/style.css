@@ -78,7 +78,8 @@ body {
   transition: opacity .4s ease;
 }
 
-.album-art-wrap img[src=""] {
+.album-art-wrap img[src=""],
+.album-art-wrap img:not([src]) {
   opacity: 0;
 }
 
@@ -141,6 +142,12 @@ body {
   background: #333;
   border-radius: 2px;
   overflow: hidden;
+  cursor: pointer;
+  transition: height .15s ease;
+}
+
+.progress-bar:hover {
+  height: 8px;
 }
 
 .progress-fill {
@@ -148,7 +155,7 @@ body {
   width: 0%;
   background: var(--accent);
   border-radius: 2px;
-  transition: width 1s linear;
+  transition: width 0.5s linear;
 }
 
 /* --- Controls --- */
@@ -340,6 +347,61 @@ input[type="range"]:disabled {
   text-transform: uppercase;
   letter-spacing: .06em;
   color: var(--text-dim);
+}
+
+.queue-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.autoplay-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: .75rem;
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+}
+
+.autoplay-toggle input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 28px;
+  height: 16px;
+  background: #333;
+  border-radius: 8px;
+  position: relative;
+  cursor: pointer;
+  transition: background .2s;
+}
+
+.autoplay-toggle input[type="checkbox"]::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  background: #888;
+  border-radius: 50%;
+  transition: transform .2s, background .2s;
+}
+
+.autoplay-toggle input[type="checkbox"]:checked {
+  background: var(--accent);
+}
+
+.autoplay-toggle input[type="checkbox"]:checked::after {
+  transform: translateX(12px);
+  background: #fff;
+}
+
+.autoplay-toggle:hover {
+  color: var(--text);
 }
 
 /* --- Queue List --- */

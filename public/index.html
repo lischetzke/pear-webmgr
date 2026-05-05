@@ -25,7 +25,7 @@
 
       <div class="progress">
         <span id="elapsed">0:00</span>
-        <div class="progress-bar">
+        <div id="progress-bar" class="progress-bar">
           <div id="progress-fill" class="progress-fill"></div>
         </div>
         <span id="duration">0:00</span>
@@ -72,7 +72,13 @@
         </div>
 
         <div class="queue-section queue-section--list">
-          <h2 class="queue-heading">Up Next</h2>
+          <div class="queue-heading-row">
+            <h2 class="queue-heading">Up Next</h2>
+            <label class="autoplay-toggle" title="Automatically add related songs when the queue is about to run out">
+              <input id="autoplay-toggle" type="checkbox">
+              <span>Autoplay</span>
+            </label>
+          </div>
           <div id="queue-list" class="queue-list">
             <div class="queue-empty">Queue is empty</div>
           </div>
