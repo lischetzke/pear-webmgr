@@ -58,6 +58,9 @@
   let syncedLyrics = null; // [{time, text}] or null
   let plainLyricsText = null;
   let lastRenderedActiveIndex = -999;
+  let songSocket = null;
+  let songSocketConnected = false;
+  let songSocketReconnectTimer = null;
 
   // --- Helpers ---
 
@@ -414,21 +417,27 @@
       currentSongDuration = Number(song.songDuration) || 0;
       isSongPlaying = song.isPaused === false;
 
-      const serverElapsed = Number(song.elapsedSeconds) || 0;
-      // Only accept the server sample when it's a real mid-song value.
-      // pear-desktop often reports either 0 or the full duration, which would
-      // snap the progress back and forth; ignore those and keep our local
-      // counter ticking.
-      var isSuspiciousSample =
-        serverElapsed === 0 ||
-        (currentSongDuration > 0 && serverElapsed >= currentSongDuration - 0.5);
+      // The WebSocket (connectSongSocket) pushes position/play-state updates
+      // right as they change on Pear's side, which is far more accurate than
+      // this 2s REST poll's truncated elapsedSeconds. Only fall back to the
+      // REST-derived sample when the socket isn't connected.
+      if (!songSocketConnected) {
+        const serverElapsed = Number(song.elapsedSeconds) || 0;
+        // Only accept the server sample when it's a real mid-song value.
+        // pear-desktop often reports either 0 or the full duration, which would
+        // snap the progress back and forth; ignore those and keep our local
+        // counter ticking.
+        var isSuspiciousSample =
+          serverElapsed === 0 ||
+          (currentSongDuration > 0 && serverElapsed >= currentSongDuration - 0.5);
 
-      if (!isSuspiciousSample) {
-        currentElapsedSeconds = serverElapsed;
-      } else if (serverElapsed === 0 && !isSongPlaying && currentElapsedSeconds === 0) {
-        currentElapsedSeconds = 0;
+        if (!isSuspiciousSample) {
+          currentElapsedSeconds = serverElapsed;
+        } else if (serverElapsed === 0 && !isSongPlaying && currentElapsedSeconds === 0) {
+          currentElapsedSeconds = 0;
+        }
+        lastElapsedSampleAt = Date.now();
       }
-      lastElapsedSampleAt = Date.now();
 
       renderProgress();
       setPlayIcon(!isSongPlaying);
@@ -460,6 +469,63 @@
     currentElapsedSeconds = Math.min(currentSongDuration, currentElapsedSeconds + delta);
     renderProgress();
     updateActiveLyricLine();
+  }
+
+  // --- Live position sync (WebSocket) ---
+  // Pear Desktop pushes position/play-state changes over /api/v1/ws the moment
+  // they happen, instead of us guessing them from a coarse 2s REST poll.
+
+  function handleSongSocketMessage(data) {
+    if (!data || typeof data !== 'object') return;
+
+    if (typeof data.position === 'number') {
+      currentElapsedSeconds = data.position;
+      lastElapsedSampleAt = Date.now();
+    }
+    if (typeof data.isPlaying === 'boolean') {
+      isSongPlaying = data.isPlaying;
+      setPlayIcon(!isSongPlaying);
+    }
+    if (typeof data.position === 'number' || typeof data.isPlaying === 'boolean') {
+      renderProgress();
+      updateActiveLyricLine();
+    }
+  }
+
+  function scheduleSongSocketReconnect() {
+    if (songSocketReconnectTimer) return;
+    songSocketReconnectTimer = setTimeout(() => {
+      songSocketReconnectTimer = null;
+      connectSongSocket();
+    }, 3000);
+  }
+
+  function connectSongSocket() {
+    const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    let socket;
+    try {
+      socket = new WebSocket(`${wsProtocol}//${location.host}/api/v1/ws`);
+    } catch {
+      scheduleSongSocketReconnect();
+      return;
+    }
+    songSocket = socket;
+
+    socket.addEventListener('open', () => {
+      songSocketConnected = true;
+    });
+    socket.addEventListener('message', (event) => {
+      try {
+        handleSongSocketMessage(JSON.parse(event.data));
+      } catch { /* ignore malformed message */ }
+    });
+    socket.addEventListener('close', () => {
+      songSocketConnected = false;
+      scheduleSongSocketReconnect();
+    });
+    socket.addEventListener('error', () => {
+      songSocketConnected = false;
+    });
   }
 
   async function pollVolume() {
@@ -1335,6 +1401,7 @@
   pollSong();
   pollVolume();
   fetchQueue();
+  connectSongSocket();
   setInterval(pollSong, 2000);
   setInterval(pollVolume, 5000);
   setInterval(pollAutoplayState, 5000);
