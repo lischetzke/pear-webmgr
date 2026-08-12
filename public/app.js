@@ -20,7 +20,6 @@
     tabQueue: $('#tab-queue'),
     tabSearch: $('#tab-search'),
     lyricsContainer: $('#lyrics-container'),
-    lyricsFxCheckbox: $('#lyrics-fx-checkbox'),
     urlInput: $('#url-input'),
     btnAddUrlNext: $('#btn-add-url-next'),
     btnAddUrlEnd: $('#btn-add-url-end'),
@@ -46,10 +45,10 @@
   let syncedLyrics = null; // [{time, text}] or null
   let plainLyricsText = null;
   let lastPolledElapsed = 0;
+  let lastPolledDuration = 0;
   let lastPolledAt = 0;
   let lastIsPaused = true;
   let lastRenderedActiveIndex = -999;
-  let fancyLyricsAnimations = localStorage.getItem('lyricsFancyAnimations') === 'true';
 
   // --- Helpers ---
 
@@ -334,6 +333,7 @@
   // --- Player Polling ---
 
   async function pollSong() {
+    const requestStartedAt = performance.now();
     try {
       const res = await fetch('/api/v1/song');
       if (res.status === 204) {
@@ -349,6 +349,7 @@
         currentSongArtist = '';
         setPlayIcon(true);
         clearLyrics();
+        lastPolledDuration = 0;
         return;
       }
 
@@ -371,18 +372,24 @@
       currentSongArtist = song.artist || '';
 
       const duration = song.songDuration || 0;
-      const elapsed = song.elapsedSeconds || 0;
-      els.elapsed.textContent = formatTime(elapsed);
+      const requestEndedAt = performance.now();
+      // elapsedSeconds is reported as a truncated integer, so the true value is
+      // somewhere in [elapsedSeconds, elapsedSeconds + 1) — assume the midpoint
+      // to halve the worst-case drift instead of always trailing by up to 1s.
+      const elapsed = Math.min((song.elapsedSeconds || 0) + 0.5, duration || Infinity);
+
       els.duration.textContent = formatTime(duration);
-      els.progressFill.style.width = duration > 0
-        ? (elapsed / duration * 100) + '%'
-        : '0%';
 
       setPlayIcon(song.isPaused !== false);
 
       lastPolledElapsed = elapsed;
-      lastPolledAt = performance.now();
+      lastPolledDuration = duration;
+      // Anchor interpolation to the middle of the request round-trip rather than
+      // the moment the response was parsed, since the server value reflects the
+      // song position as of some point during that round-trip, not after it.
+      lastPolledAt = requestStartedAt + (requestEndedAt - requestStartedAt) / 2;
       lastIsPaused = song.isPaused !== false;
+      updateProgressDisplay();
 
       if (song.title && song.artist) updateLyricsForSong(song);
     } catch { /* silently retry next cycle */ }
@@ -403,35 +410,51 @@
 
   // --- Lyrics ---
 
+  const LYRICS_ROW_REM = 2.2; // must match .lyrics-line height and .lyrics-container height (5 rows) in style.css
+
+  let lyricsTrackEl = null;
+  let lyricsLineEls = [];
+  let activeLyricEl = null;
+
   function clearLyrics() {
     currentLyricsKey = '';
     syncedLyrics = null;
     plainLyricsText = null;
     lastRenderedActiveIndex = -999;
+    lyricsTrackEl = null;
+    lyricsLineEls = [];
+    activeLyricEl = null;
+    els.lyricsContainer.classList.add('plain-mode');
     els.lyricsContainer.innerHTML = '<div class="lyrics-empty">No song playing</div>';
   }
 
   const MUSIC_NOTE_ICON = '<svg class="music-note-icon" viewBox="0 0 24 24" width="16" height="16"><path d="M9 3v10.55A4 4 0 1 0 11 17V7h6V3H9z"/></svg>';
 
-  function renderLyricsWindow(activeIndex) {
-    if (!syncedLyrics || syncedLyrics.length === 0) return;
-    const start = Math.max(0, activeIndex - 2);
-    const end = Math.min(syncedLyrics.length - 1, activeIndex + 2);
-
-    let html = '';
-    for (let i = start; i <= end; i++) {
-      const line = syncedLyrics[i];
-      const content = line.text ? escapeHtml(line.text) : MUSIC_NOTE_ICON;
-      const cls = ['lyrics-line'];
-      if (i === activeIndex) cls.push('active');
-      else if (Math.abs(i - activeIndex) === 1) cls.push('near-active');
-      html += `<div class="${cls.join(' ')}">${content}</div>`;
-    }
-    els.lyricsContainer.innerHTML = html;
+  function buildLyricsTrack() {
+    els.lyricsContainer.classList.remove('plain-mode');
+    els.lyricsContainer.innerHTML = '';
+    lyricsTrackEl = document.createElement('div');
+    lyricsTrackEl.className = 'lyrics-track';
+    lyricsLineEls = syncedLyrics.map((line) => {
+      const el = document.createElement('div');
+      el.className = 'lyrics-line';
+      if (line.text) {
+        el.textContent = line.text;
+      } else {
+        el.innerHTML = MUSIC_NOTE_ICON;
+      }
+      lyricsTrackEl.appendChild(el);
+      return el;
+    });
+    els.lyricsContainer.appendChild(lyricsTrackEl);
+    activeLyricEl = null;
   }
 
   function renderStaticLyrics() {
-    els.lyricsContainer.classList.toggle('fancy', fancyLyricsAnimations);
+    lyricsTrackEl = null;
+    lyricsLineEls = [];
+    activeLyricEl = null;
+    els.lyricsContainer.classList.add('plain-mode');
     if (plainLyricsText === '(Instrumental)') {
       els.lyricsContainer.innerHTML = `<div class="lyrics-plain lyrics-instrumental">${MUSIC_NOTE_ICON} Instrumental</div>`;
     } else if (plainLyricsText) {
@@ -448,6 +471,10 @@
     syncedLyrics = null;
     plainLyricsText = null;
     lastRenderedActiveIndex = -999;
+    lyricsTrackEl = null;
+    lyricsLineEls = [];
+    activeLyricEl = null;
+    els.lyricsContainer.classList.add('plain-mode');
     els.lyricsContainer.innerHTML = '<div class="lyrics-empty">Loading lyrics...</div>';
 
     try {
@@ -468,24 +495,39 @@
       } else if (data.plainLyrics) {
         plainLyricsText = data.plainLyrics;
       }
-      els.lyricsContainer.classList.toggle('fancy', fancyLyricsAnimations);
       if (syncedLyrics && syncedLyrics.length > 0) {
+        buildLyricsTrack();
         updateActiveLyricLine();
       } else {
         renderStaticLyrics();
       }
     } catch {
+      els.lyricsContainer.classList.add('plain-mode');
       els.lyricsContainer.innerHTML = '<div class="lyrics-empty">No lyrics found</div>';
     }
+  }
+
+  function getInterpolatedElapsed() {
+    let elapsed = lastPolledElapsed;
+    if (!lastIsPaused && lastPolledAt) {
+      elapsed += (performance.now() - lastPolledAt) / 1000;
+    }
+    return elapsed;
+  }
+
+  function updateProgressDisplay() {
+    const duration = lastPolledDuration;
+    const elapsed = Math.min(Math.max(getInterpolatedElapsed(), 0), duration || Infinity);
+    els.elapsed.textContent = formatTime(elapsed);
+    els.progressFill.style.width = duration > 0
+      ? (elapsed / duration * 100) + '%'
+      : '0%';
   }
 
   function updateActiveLyricLine() {
     if (!syncedLyrics || syncedLyrics.length === 0) return;
 
-    let elapsed = lastPolledElapsed;
-    if (!lastIsPaused && lastPolledAt) {
-      elapsed += (performance.now() - lastPolledAt) / 1000;
-    }
+    const elapsed = getInterpolatedElapsed();
 
     let activeIndex = -1;
     for (let i = 0; i < syncedLyrics.length; i++) {
@@ -495,7 +537,16 @@
 
     if (activeIndex === lastRenderedActiveIndex) return;
     lastRenderedActiveIndex = activeIndex;
-    renderLyricsWindow(activeIndex);
+
+    if (activeLyricEl) activeLyricEl.classList.remove('active');
+    activeLyricEl = activeIndex >= 0 ? lyricsLineEls[activeIndex] : null;
+    if (activeLyricEl) activeLyricEl.classList.add('active');
+
+    if (lyricsTrackEl) {
+      const rowIndex = Math.max(activeIndex, 0);
+      const offsetRem = (5 * LYRICS_ROW_REM) / 2 - LYRICS_ROW_REM / 2 - rowIndex * LYRICS_ROW_REM;
+      lyricsTrackEl.style.transform = `translateY(${offsetRem}rem)`;
+    }
   }
 
   function setPlayIcon(isPaused) {
@@ -574,14 +625,6 @@
       els.tabQueue.classList.toggle('active', tab === 'queue');
       els.tabSearch.classList.toggle('active', tab === 'search');
     });
-  });
-
-  els.lyricsFxCheckbox.checked = fancyLyricsAnimations;
-  els.lyricsContainer.classList.toggle('fancy', fancyLyricsAnimations);
-  els.lyricsFxCheckbox.addEventListener('change', () => {
-    fancyLyricsAnimations = els.lyricsFxCheckbox.checked;
-    localStorage.setItem('lyricsFancyAnimations', String(fancyLyricsAnimations));
-    els.lyricsContainer.classList.toggle('fancy', fancyLyricsAnimations);
   });
 
   // --- Queue Display ---
@@ -1016,6 +1059,7 @@
   queuePollTimer = setInterval(fetchQueue, 3000);
 
   (function lyricsSyncLoop() {
+    updateProgressDisplay();
     updateActiveLyricLine();
     requestAnimationFrame(lyricsSyncLoop);
   })();
