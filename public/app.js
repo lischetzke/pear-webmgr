@@ -349,7 +349,9 @@
         currentSongArtist = '';
         setPlayIcon(true);
         clearLyrics();
+        lastPolledElapsed = 0;
         lastPolledDuration = 0;
+        lastIsPaused = true;
         return;
       }
 
