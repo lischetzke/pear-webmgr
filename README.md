@@ -44,6 +44,7 @@ YTM_HOST=192.168.1.50 npm start
 - Queue management (view, reorder, remove)
 - Add songs by YouTube/YT Music URL
 - Search and add songs directly
+- Synced/plain lyrics tab (via [LRCLIB](https://lrclib.net))
 
 ## Disclaimer
 

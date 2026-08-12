@@ -141,6 +141,9 @@ vite.config.ts.timestamp-*
 # Image cache
 .img-cache/
 
+# Lyrics cache
+.lyrics-cache/
+
 # Certificates
 ssl/
 certs/

@@ -21,6 +21,9 @@ const YTM_TARGET = `http://${YTM_HOST}:${YTM_PORT}`;
 const CACHE_DIR = path.join(__dirname, '.img-cache');
 if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR);
 
+const LYRICS_CACHE_DIR = path.join(__dirname, '.lyrics-cache');
+if (!fs.existsSync(LYRICS_CACHE_DIR)) fs.mkdirSync(LYRICS_CACHE_DIR);
+
 const app = express();
 
 app.use(express.static(path.join(__dirname, 'public')));
@@ -65,6 +68,68 @@ app.get('/img-cache', (req, res) => {
     });
     upstream.on('error', () => res.status(502).end());
   }).on('error', () => res.status(502).end());
+});
+
+// --- Lyrics proxy (LRCLIB) ---
+
+function fetchJson(url) {
+  return new Promise((resolve, reject) => {
+    https.get(url, { headers: { 'User-Agent': 'pear-webmgr (https://github.com/pear-devs/pear-desktop)' } }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => {
+        if (res.statusCode === 404) return resolve(null);
+        if (res.statusCode !== 200) return reject(new Error('LRCLIB status ' + res.statusCode));
+        try {
+          resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+        } catch (err) {
+          reject(err);
+        }
+      });
+    }).on('error', reject);
+  });
+}
+
+app.get('/lyrics', async (req, res) => {
+  const { title, artist, album, duration } = req.query;
+  if (!title || !artist) return res.status(400).end();
+
+  const hash = crypto.createHash('md5').update(`${title}|${artist}|${album || ''}`).digest('hex');
+  const cachePath = path.join(LYRICS_CACHE_DIR, hash + '.json');
+
+  if (fs.existsSync(cachePath)) {
+    try {
+      const cached = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+      return res.status(cached.notFound ? 404 : 200).json(cached);
+    } catch {}
+  }
+
+  try {
+    const params = new URLSearchParams({ track_name: title, artist_name: artist });
+    if (album) params.set('album_name', album);
+    if (duration) params.set('duration', duration);
+
+    let result = await fetchJson(`https://lrclib.net/api/get?${params.toString()}`);
+
+    if (!result) {
+      const searchParams = new URLSearchParams({ track_name: title, artist_name: artist });
+      const searchResults = await fetchJson(`https://lrclib.net/api/search?${searchParams.toString()}`);
+      result = Array.isArray(searchResults) && searchResults.length > 0 ? searchResults[0] : null;
+    }
+
+    const payload = result
+      ? {
+        plainLyrics: result.plainLyrics || null,
+        syncedLyrics: result.syncedLyrics || null,
+        instrumental: !!result.instrumental,
+      }
+      : { notFound: true };
+
+    fs.writeFileSync(cachePath, JSON.stringify(payload));
+    res.status(payload.notFound ? 404 : 200).json(payload);
+  } catch (err) {
+    res.status(502).json({ error: 'Failed to fetch lyrics' });
+  }
 });
 
 app.use(createProxyMiddleware({

@@ -23,6 +23,17 @@ body {
   color: var(--text);
   min-height: 100dvh;
   padding: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+  max-width: 900px;
 }
 
 /* --- Two-Column Layout --- */
@@ -30,10 +41,7 @@ body {
 .layout {
   display: flex;
   gap: 24px;
-  max-width: 900px;
-  margin: 0 auto;
-  min-height: calc(100dvh - 48px);
-  align-items: center;
+  width: 100%;
 }
 
 .panel {
@@ -624,6 +632,101 @@ input[type="range"]:disabled {
   color: var(--text-dim);
   font-size: .85rem;
   padding: 16px 0;
+}
+
+/* --- Lyrics --- */
+
+.lyrics-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 24px;
+  width: 100%;
+}
+
+.lyrics-fx-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: .75rem;
+  color: var(--text-dim);
+  cursor: pointer;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.lyrics-fx-toggle input {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.lyrics-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+  height: 11rem;
+  overflow: hidden;
+}
+
+.music-note-icon {
+  fill: currentColor;
+  vertical-align: -3px;
+}
+
+.lyrics-empty {
+  text-align: center;
+  color: var(--text-dim);
+  font-size: .85rem;
+  padding: 8px 0;
+}
+
+.lyrics-line {
+  width: 100%;
+  font-size: .9rem;
+  color: var(--text-dim);
+  line-height: 1.3;
+  transition: color .25s, transform .25s;
+}
+
+.lyrics-line.active {
+  color: var(--text);
+  font-weight: 600;
+  font-size: 1.15rem;
+}
+
+.lyrics-plain {
+  font-size: .9rem;
+  color: var(--text);
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+/* --- Lyrics: fancy animation mode --- */
+
+.lyrics-container.fancy .lyrics-line {
+  filter: blur(0);
+  opacity: .55;
+  transform: scale(.97);
+  transform-origin: center;
+  transition: color .35s ease, opacity .4s ease, transform .4s cubic-bezier(.34, 1.56, .64, 1), filter .4s ease, text-shadow .4s ease;
+}
+
+.lyrics-container.fancy .lyrics-line.active {
+  opacity: 1;
+  transform: scale(1.06);
+  text-shadow: 0 0 18px var(--accent-glow), 0 0 2px rgba(255, 255, 255, .25);
+}
+
+.lyrics-container.fancy .lyrics-line.near-active {
+  opacity: .8;
+  filter: blur(0);
+}
+
+.lyrics-container.fancy .lyrics-line:not(.active):not(.near-active) {
+  filter: blur(.4px);
 }
 
 /* --- Responsive: stack on narrow viewports --- */
