@@ -49,6 +49,9 @@
   let lastPolledAt = 0;
   let lastIsPaused = true;
   let lastRenderedActiveIndex = -999;
+  let songSocket = null;
+  let songSocketConnected = false;
+  let songSocketReconnectTimer = null;
 
   // --- Helpers ---
 
@@ -372,27 +375,81 @@
       currentSongArtist = song.artist || '';
 
       const duration = song.songDuration || 0;
-      const requestEndedAt = performance.now();
-      // elapsedSeconds is reported as a truncated integer, so the true value is
-      // somewhere in [elapsedSeconds, elapsedSeconds + 1) — assume the midpoint
-      // to halve the worst-case drift instead of always trailing by up to 1s.
-      const elapsed = Math.min((song.elapsedSeconds || 0) + 0.5, duration || Infinity);
-
+      lastPolledDuration = duration;
       els.duration.textContent = formatTime(duration);
 
       setPlayIcon(song.isPaused !== false);
 
-      lastPolledElapsed = elapsed;
-      lastPolledDuration = duration;
-      // Anchor interpolation to the middle of the request round-trip rather than
-      // the moment the response was parsed, since the server value reflects the
-      // song position as of some point during that round-trip, not after it.
-      lastPolledAt = requestStartedAt + (requestEndedAt - requestStartedAt) / 2;
-      lastIsPaused = song.isPaused !== false;
-      updateProgressDisplay();
+      // The WebSocket (connectSongSocket) pushes position/play-state updates
+      // right as they change on Pear's side, which is far more accurate than
+      // this 2s REST poll's truncated elapsedSeconds. Only fall back to the
+      // REST-derived position when the socket isn't connected.
+      if (!songSocketConnected) {
+        const requestEndedAt = performance.now();
+        lastPolledElapsed = Math.min((song.elapsedSeconds || 0) + 0.5, duration || Infinity);
+        lastPolledAt = requestStartedAt + (requestEndedAt - requestStartedAt) / 2;
+        lastIsPaused = song.isPaused !== false;
+        updateProgressDisplay();
+      }
 
       if (song.title && song.artist) updateLyricsForSong(song);
     } catch { /* silently retry next cycle */ }
+  }
+
+  // --- Live position sync (WebSocket) ---
+  // Pear Desktop pushes position/play-state changes over /api/v1/ws the moment
+  // they happen, instead of us guessing them from a coarse 2s REST poll.
+
+  function handleSongSocketMessage(data) {
+    if (!data || typeof data !== 'object') return;
+
+    if (typeof data.position === 'number') {
+      lastPolledElapsed = data.position;
+      lastPolledAt = performance.now();
+    }
+    if (typeof data.isPlaying === 'boolean') {
+      lastIsPaused = !data.isPlaying;
+      setPlayIcon(lastIsPaused);
+    }
+    if (typeof data.position === 'number' || typeof data.isPlaying === 'boolean') {
+      updateProgressDisplay();
+    }
+  }
+
+  function scheduleSongSocketReconnect() {
+    if (songSocketReconnectTimer) return;
+    songSocketReconnectTimer = setTimeout(() => {
+      songSocketReconnectTimer = null;
+      connectSongSocket();
+    }, 3000);
+  }
+
+  function connectSongSocket() {
+    const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    let socket;
+    try {
+      socket = new WebSocket(`${wsProtocol}//${location.host}/api/v1/ws`);
+    } catch {
+      scheduleSongSocketReconnect();
+      return;
+    }
+    songSocket = socket;
+
+    socket.addEventListener('open', () => {
+      songSocketConnected = true;
+    });
+    socket.addEventListener('message', (event) => {
+      try {
+        handleSongSocketMessage(JSON.parse(event.data));
+      } catch { /* ignore malformed message */ }
+    });
+    socket.addEventListener('close', () => {
+      songSocketConnected = false;
+      scheduleSongSocketReconnect();
+    });
+    socket.addEventListener('error', () => {
+      songSocketConnected = false;
+    });
   }
 
   async function pollVolume() {
@@ -1054,6 +1111,7 @@
   pollSong();
   pollVolume();
   fetchQueue();
+  connectSongSocket();
   setInterval(pollSong, 2000);
   setInterval(pollVolume, 5000);
   queuePollTimer = setInterval(fetchQueue, 3000);

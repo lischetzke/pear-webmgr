@@ -132,11 +132,14 @@ app.get('/lyrics', async (req, res) => {
   }
 });
 
-app.use(createProxyMiddleware({
+const apiProxy = createProxyMiddleware({
   target: YTM_TARGET,
   changeOrigin: true,
   pathFilter: '/api',
-}));
+  ws: true,
+});
+
+app.use(apiProxy);
 
 function getLanIP() {
   const interfaces = os.networkInterfaces();
@@ -173,6 +176,11 @@ if (USE_SSL) {
   listenPort = PORT;
   protocol = 'http';
 }
+
+// http-proxy-middleware only intercepts WS upgrades automatically when the
+// underlying HTTP server is the one it's attached to via app.listen(); since
+// we create the server manually (for HTTPS support), wire it up explicitly.
+server.on('upgrade', apiProxy.upgrade);
 
 server.listen(listenPort, '0.0.0.0', () => {
   const ip = getLanIP();
