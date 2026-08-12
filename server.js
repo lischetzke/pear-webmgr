@@ -90,6 +90,8 @@ function fetchJson(url) {
   });
 }
 
+const NOT_FOUND_CACHE_TTL_MS = 60 * 60 * 1000; // LRCLIB is crowd-sourced; a miss now may be found later, so don't stick forever.
+
 app.get('/lyrics', async (req, res) => {
   const { title, artist, album, duration } = req.query;
   if (!title || !artist) return res.status(400).end();
@@ -100,7 +102,10 @@ app.get('/lyrics', async (req, res) => {
   if (fs.existsSync(cachePath)) {
     try {
       const cached = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
-      return res.status(cached.notFound ? 404 : 200).json(cached);
+      const isStaleNotFound = cached.notFound && (Date.now() - (cached.cachedAt || 0) > NOT_FOUND_CACHE_TTL_MS);
+      if (!isStaleNotFound) {
+        return res.status(cached.notFound ? 404 : 200).json(cached);
+      }
     } catch {}
   }
 
@@ -123,7 +128,7 @@ app.get('/lyrics', async (req, res) => {
         syncedLyrics: result.syncedLyrics || null,
         instrumental: !!result.instrumental,
       }
-      : { notFound: true };
+      : { notFound: true, cachedAt: Date.now() };
 
     fs.writeFileSync(cachePath, JSON.stringify(payload));
     res.status(payload.notFound ? 404 : 200).json(payload);
