@@ -23,6 +23,17 @@ body {
   color: var(--text);
   min-height: 100dvh;
   padding: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+  max-width: 900px;
 }
 
 /* --- Two-Column Layout --- */
@@ -30,10 +41,7 @@ body {
 .layout {
   display: flex;
   gap: 24px;
-  max-width: 900px;
-  margin: 0 auto;
-  min-height: calc(100dvh - 48px);
-  align-items: center;
+  width: 100%;
 }
 
 .panel {
@@ -127,13 +135,22 @@ body {
 /* --- Progress --- */
 
 .progress {
-  display: flex;
+  display: grid;
+  grid-template-columns: 34px 1fr 34px;
   align-items: center;
   gap: 10px;
   width: 100%;
   font-size: .75rem;
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
+}
+
+#elapsed {
+  text-align: left;
+}
+
+#duration {
+  text-align: right;
 }
 
 .progress-bar {
@@ -210,7 +227,8 @@ body {
 /* --- Volume --- */
 
 .volume {
-  display: flex;
+  display: grid;
+  grid-template-columns: 34px 1fr 34px;
   align-items: center;
   gap: 10px;
   width: 100%;
@@ -218,13 +236,12 @@ body {
 
 .volume-icon {
   fill: var(--text-dim);
-  flex-shrink: 0;
+  justify-self: center;
 }
 
 .volume-value {
   font-size: .8rem;
   color: var(--text-dim);
-  min-width: 28px;
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
@@ -686,6 +703,94 @@ input[type="range"]:disabled {
   color: var(--text-dim);
   font-size: .85rem;
   padding: 16px 0;
+}
+
+/* --- Lyrics --- */
+
+.lyrics-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 24px;
+  width: 100%;
+}
+
+.lyrics-container {
+  position: relative;
+  height: 11rem; /* 5 * LYRICS_ROW_REM (app.js) */
+  overflow: hidden;
+  text-align: center;
+  mask-image: linear-gradient(to bottom, transparent, #000 15%, #000 85%, transparent);
+}
+
+.lyrics-container.plain-mode {
+  mask-image: none;
+}
+
+.lyrics-container > .lyrics-empty {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
+}
+
+.lyrics-container > .lyrics-plain {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  padding: 8px 4px;
+  scrollbar-width: thin;
+  scrollbar-color: #333 transparent;
+}
+
+.lyrics-track {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  transition: transform .5s cubic-bezier(.22, 1, .36, 1);
+}
+
+.music-note-icon {
+  fill: currentColor;
+  vertical-align: -3px;
+}
+
+.lyrics-empty {
+  text-align: center;
+  color: var(--text-dim);
+  font-size: .85rem;
+  padding: 8px 0;
+}
+
+.lyrics-line {
+  height: 2.2rem; /* LYRICS_ROW_REM in app.js */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .9rem;
+  font-weight: 400;
+  color: var(--text-dim);
+  opacity: .55;
+  filter: blur(.4px);
+  transition: color .3s ease, opacity .35s ease, filter .35s ease, text-shadow .35s ease, font-weight .3s ease, font-size .3s ease;
+}
+
+.lyrics-line.active {
+  color: var(--text);
+  font-weight: 600;
+  font-size: 1.15rem;
+  opacity: 1;
+  filter: blur(0);
+  text-shadow: 0 0 18px var(--accent-glow), 0 0 2px rgba(255, 255, 255, .25);
+}
+
+.lyrics-plain {
+  font-size: .9rem;
+  color: var(--text);
+  line-height: 1.6;
+  white-space: pre-wrap;
 }
 
 /* --- Responsive: stack on narrow viewports --- */
