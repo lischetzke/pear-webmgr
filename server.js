@@ -1,6 +1,7 @@
 require('dotenv').config();
 
 const express = require('express');
+const compression = require('compression');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 const os = require('os');
 const path = require('path');
@@ -26,6 +27,8 @@ if (!fs.existsSync(LYRICS_CACHE_DIR)) fs.mkdirSync(LYRICS_CACHE_DIR);
 
 const app = express();
 
+app.disable('x-powered-by');
+app.use(compression());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // --- Image cache proxy ---
