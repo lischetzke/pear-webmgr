@@ -37,10 +37,12 @@ body {
 }
 
 /* --- Two-Column Layout --- */
+/* .panel-player sizes .layout via normal flow; .panel-sidebar is
+   absolutely positioned to match that height exactly, so a long
+   queue scrolls inside the sidebar instead of growing the page. */
 
 .layout {
-  display: flex;
-  gap: 24px;
+  position: relative;
   width: 100%;
 }
 
@@ -52,7 +54,6 @@ body {
 
 .panel-player {
   width: 340px;
-  flex-shrink: 0;
   padding: 32px 28px 24px;
   display: flex;
   flex-direction: column;
@@ -61,8 +62,11 @@ body {
 }
 
 .panel-sidebar {
-  flex: 1;
-  min-width: 0;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 364px; /* panel-player width (340px) + layout gap (24px) */
+  right: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -797,8 +801,10 @@ input[type="range"]:disabled {
 
 @media (max-width: 700px) {
   .layout {
+    display: flex;
     flex-direction: column;
     align-items: center;
+    gap: 24px;
   }
 
   .panel-player {
@@ -807,9 +813,9 @@ input[type="range"]:disabled {
   }
 
   .panel-sidebar {
+    position: static;
     width: 100%;
     max-width: 380px;
-    height: auto !important;
-    max-height: 70vh;
+    height: 60vh;
   }
 }
